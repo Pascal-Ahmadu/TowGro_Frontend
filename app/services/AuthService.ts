@@ -1,11 +1,14 @@
 /**
  * @file AuthService.ts (Updated)
- * @description Fixed authentication service for handling user login/registration
+ * @description Enhanced authentication service with improved error handling
  */
+import * as SecureStore from 'expo-secure-store';
+import { store } from '../store';
+import { logoutSuccess } from '../store/authSlice';
 import apiClient, { ApiResponse } from './api/ApiClient';
 import { extractTokenFromResponse, storeAuthTokens } from './api/utils/authUtils';
 import { formatError } from './api/utils/errorUtils';
-import { API_ENDPOINTS } from './config/constants';
+import { API_ENDPOINTS, STORAGE_KEYS } from './config/constants';
 
 // Types
 export interface LoginRequest {
@@ -26,6 +29,11 @@ export interface RegistrationRequest {
   phoneNumber?: string;
 }
 
+// Add this function to properly type-check Axios errors
+function isAxiosError(error: unknown): error is { response?: { data?: any } } {
+  return typeof error === 'object' && error !== null && 'response' in error;
+}
+
 /**
  * Auth Service with improved error handling and response validation
  */
@@ -38,35 +46,43 @@ class AuthService {
     try {
       const response = await apiClient.post(API_ENDPOINTS.LOGIN, credentials);
       
+      // Modified line - access data property for ApiResponse structure
+      if (!response.data.success && response.data.error) {
+        return {
+          success: false,
+          error: response.data.error,
+          status: response.status
+        };
+      }
+      
       // Log response details for debugging
       console.log('Login response received:', {
         dataKeys: Object.keys(response.data || {}),
         headerKeys: Object.keys(response.headers || {}),
         status: response.status
       });
-
-      // FIXED: Check the actual server log for user not found
-      // We need to check both the response status and if there's an error in the debug logs
-      if (response.status === 201) {
-        // Check for token extraction
+      
+      // Important: Check for "No user found" in the response headers
+      // This is critical because our server logs show this message
+      const responseHeaders = JSON.stringify(response.headers || {}).toLowerCase();
+      const responseData = JSON.stringify(response.data || {}).toLowerCase();
+      
+      // Check for no user found indicators in headers or data
+      if (responseHeaders.includes('no user found') || responseData.includes('no user found')) {
+        return {
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'No account found with this email. Please check your credentials or create an account.'
+          },
+          status: response.status
+        };
+      }
+  
+      // Check for successful login (status 201 or 200)
+      if (response.status >= 200 && response.status < 300) {
         const token = extractTokenFromResponse(response);
         
-        if (!token) {
-          // FIX: Check for user not found in server logs
-          if (response.headers?.['x-debug-message']?.includes('No user found') ||
-              !response.data?.success) {
-            return {
-              success: false,
-              error: {
-                code: 'USER_NOT_FOUND',
-                message: 'No account found with this email. Please check your credentials or create an account.'
-              },
-              status: response.status
-            };
-          }
-        }
-        
-        // If token is found or session-based auth is used, store tokens
         if (token) {
           // Store token or session info
           await storeAuthTokens({
@@ -74,20 +90,33 @@ class AuthService {
             refreshToken: response.data?.refreshToken || 'session-auth',
             expiresIn: response.data?.expiresIn || 86400
           });
+          
+          return {
+            success: true,
+            data: response.data,
+            status: response.status
+          };
+        } else {
+          // No token found, likely a server configuration issue
+          console.warn('No authentication token found in successful response');
+          return {
+            success: false,
+            error: {
+              code: 'AUTH_TOKEN_MISSING',
+              message: 'Authentication failed. Please check your email and password.'
+            },
+            status: response.status
+          };
         }
-        
-        return {
-          success: true,
-          data: response.data,
-          status: response.status
-        };
       }
       
+      // Handle specific error responses from API
+      // Default error response
       return {
         success: false,
         error: {
-          code: 'AUTH_ERROR',
-          message: 'Authentication failed'
+          code: response.data?.code || 'AUTH_ERROR',
+          message: response.data?.message || 'Authentication failed'
         },
         status: response.status
       };
@@ -95,12 +124,23 @@ class AuthService {
       // Enhanced error handling with detailed logging
       console.error('Login error:', error);
       
-      // Check for network connectivity issues
       const formattedError = formatError(error);
       
-      // Add specific error handling for user_not_found
-      if (formattedError.message?.includes('No user found') ||
-          formattedError.code === 'USER_NOT_FOUND') {
+      // Check for specific error messages in the error response
+      let errorResponse: any = null;
+      let errorText = '';
+      
+      if (isAxiosError(error)) {
+        errorResponse = error.response?.data;
+        // Convert the entire error response to string for pattern matching
+        errorText = JSON.stringify(error.response || {}).toLowerCase();
+      }
+      
+      // Check if the error contains debug logs indicating no user found
+      // This is critical because our server logs show this pattern
+      if (errorText.includes('no user found') || 
+          errorText.includes('[authservice] no user found') ||
+          errorText.includes('[usersservice] searching user')) {
         return {
           success: false,
           error: {
@@ -110,11 +150,33 @@ class AuthService {
         };
       }
       
+      // Check for invalid credentials pattern
+      if (errorText.includes('invalid password') || errorText.includes('incorrect password')) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid password. Please check your credentials and try again.'
+          }
+        };
+      }
+      
+      // Network or server errors
+      if (formattedError.message?.includes('network') || !errorResponse) {
+        return {
+          success: false,
+          error: {
+            code: 'NETWORK_ERROR',
+            message: 'Network connection error. Please check your internet connection.'
+          }
+        };
+      }
+      
       return {
         success: false,
         error: formattedError.error || {
-          code: 'AUTH_ERROR',
-          message: formattedError.message || 'Authentication failed'
+          code: errorResponse?.code || 'AUTH_ERROR',
+          message: errorResponse?.message || formattedError.message || 'Authentication failed'
         }
       };
     }
@@ -245,6 +307,19 @@ class AuthService {
         status: response.status
       };
     } catch (error) {
+      // Check for common registration errors
+      const errorStr = JSON.stringify(error).toLowerCase();
+      
+      if (errorStr.includes('email already exists') || errorStr.includes('duplicate')) {
+        return {
+          success: false,
+          error: {
+            code: 'EMAIL_ALREADY_EXISTS',
+            message: 'An account with this email already exists. Please try logging in instead.'
+          }
+        };
+      }
+      
       return {
         success: false,
         error: formatError(error).error || {
@@ -268,6 +343,18 @@ class AuthService {
         status: response.status
       };
     } catch (error) {
+      const errorStr = JSON.stringify(error).toLowerCase();
+      
+      if (errorStr.includes('no user found') || errorStr.includes('user not found')) {
+        return {
+          success: false,
+          error: {
+            code: 'USER_NOT_FOUND',
+            message: 'No account found with this email. Please check your email or create an account.'
+          }
+        };
+      }
+      
       return {
         success: false,
         error: formatError(error).error || {
@@ -294,6 +381,18 @@ class AuthService {
         status: response.status
       };
     } catch (error) {
+      const errorStr = JSON.stringify(error).toLowerCase();
+      
+      if (errorStr.includes('token expired') || errorStr.includes('invalid token')) {
+        return {
+          success: false,
+          error: {
+            code: 'RESET_TOKEN_INVALID',
+            message: 'This password reset link has expired or is invalid. Please request a new one.'
+          }
+        };
+      }
+      
       return {
         success: false,
         error: formatError(error).error || {
@@ -330,29 +429,18 @@ class AuthService {
   /**
    * Logout user
    */
-  async logout(): Promise<ApiResponse<any>> {
+  async logout(): Promise<ApiResponse<any> | void> {
     try {
-      const response = await apiClient.post(API_ENDPOINTS.LOGOUT);
-      
-      // Clear auth token from client
-      apiClient.clearAuthToken();
-      
-      return {
-        success: true,
-        data: response.data,
-        status: response.status
-      };
+      await apiClient.post(API_ENDPOINTS.LOGOUT);
     } catch (error) {
-      // Still clear token even if logout API fails
-      apiClient.clearAuthToken();
-      
-      return {
-        success: false,
-        error: formatError(error).error || {
-          code: 'LOGOUT_ERROR',
-          message: 'Logout failed'
-        }
-      };
+      console.error('Logout failed:', error);
+      return Promise.reject(error);
+    } finally {
+      // Clear all authentication artifacts
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.AUTH_TOKEN);
+      await SecureStore.deleteItemAsync(STORAGE_KEYS.REFRESH_TOKEN);
+      store.dispatch(logoutSuccess());
+
     }
   }
 
@@ -361,6 +449,13 @@ class AuthService {
    */
   async validateSession(): Promise<ApiResponse<{isAuthenticated: boolean}>> {
     try {
+      const hasSession = await SecureStore.getItemAsync(
+        STORAGE_KEYS.SESSION_COOKIE
+      );
+      
+      if (hasSession === 'session-established') {
+        return { success: true, data: { isAuthenticated: true } };
+      }
       // Use any protected endpoint that returns 200 when authenticated
       await apiClient.get(API_ENDPOINTS.USER_PROFILE);
       return { success: true, data: { isAuthenticated: true } };

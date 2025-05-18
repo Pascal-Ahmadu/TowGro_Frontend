@@ -1,23 +1,78 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, Button, StyleSheet, Alert } from 'react-native';
+import AuthService from '../services/AuthService'; // Adjust the import path if necessary
+import { useNavigation } from '@react-navigation/native';
+import { RootStackParamList } from '../navigation/types';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { CommonActions } from '@react-navigation/native';
 
-const HomeScreen = () => {
+// Define the navigation prop type
+type HomeScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Home'>;
+
+const HomeScreen: React.FC = () => {
+  // Get the navigation object with proper typing
+  const navigation = useNavigation<HomeScreenNavigationProp>();
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to log out?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          onPress: async () => {
+            try {
+              // Call logout service
+              const response = await AuthService.logout();
+              
+              if (!response.success) {
+                // Log the error but continue with navigation
+                console.error('Logout failed:', response.error?.message);
+              }
+              
+              // Always navigate to SignIn screen regardless of API response
+              // since we're clearing the auth token client-side anyway
+              console.log('Navigating to SignIn after logout attempt');
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'SignIn' }],
+                })
+              );
+              
+            } catch (error) {
+              console.error('Logout error:', error);
+              // Still navigate to SignIn since we're clearing auth token
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'SignIn' }],
+                })
+              );
+            }
+          },
+          style: 'destructive',
+        },
+      ],
+      { cancelable: false }
+    );
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Welcome to TowGro</Text>
-        <Text style={styles.text}>Dummy Home Screen</Text>
-      </View>
-    </SafeAreaView>
+    <View style={styles.container}>
+      <Text style={styles.title}>Welcome to the Home Screen!</Text>
+      <Text style={styles.subtitle}>You are successfully logged in.</Text>
+      <Button title="Logout" onPress={handleLogout} />
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -26,11 +81,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  text: {
+  subtitle: {
     fontSize: 16,
-    color: '#666',
+    marginBottom: 20,
+    textAlign: 'center',
   },
 });
 

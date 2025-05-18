@@ -3,12 +3,16 @@
  * @description Modern React sign-in form with robust error handling and optimized rendering
  */
 import { AntDesign } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { memo, useEffect } from 'react';
 import { ActivityIndicator, Text, TouchableOpacity, View } from 'react-native';
 import { useSignInForm } from '../../hooks/auth/useSignInForm';
+import type { RootStackParamList } from '../../navigation/types';
 import Button from './Button';
 import FormInput from './FormInput';
 import { styles } from './SignInForm.styles';
+
 
 /**
  * Memoized input field component to prevent unnecessary re-renders
@@ -85,7 +89,7 @@ const SignInForm: React.FC = () => {
     showPassword,
     isAuthenticated,
     isSessionValidated,
-    
+
     // Event handlers
     handleChange,
     handleFocus,
@@ -96,22 +100,30 @@ const SignInForm: React.FC = () => {
     handleForgotPassword,
     handleGoogleSignIn,
     handleBiometricAuth,
-    handleLoginSuccess  // Now correctly accessed from the hook
+    handleLoginSuccess,  // Now correctly accessed from the hook
+    // Remove navigation from here as it's not returned by the hook
+    // navigation // Add navigation here
   } = useSignInForm();
-  
+
+  // Get the navigation object directly in the component
+  type SignInNavProp = NativeStackNavigationProp<RootStackParamList, 'SignIn'>;
+  const navigation = useNavigation<SignInNavProp>();
+
   // Effect to handle automatic redirect if already authenticated
   // This ensures users don't see the login form when already logged in
   useEffect(() => {
     if (isAuthenticated && isSessionValidated) {
       // Use the handleLoginSuccess from the hook
       handleLoginSuccess();
+      // Add direct navigation as fallback using the hook's navigation object
+      navigation.navigate('Home');
     }
-  }, [isAuthenticated, isSessionValidated, handleLoginSuccess]);
-  
+  }, [isAuthenticated, isSessionValidated, handleLoginSuccess, navigation]); // Add navigation to dependencies
+
   return (
     <View style={styles.form} testID="sign-in-form">
       <ErrorMessage message={errors.general} />
-      
+
       <View style={styles.inputs}>
         <InputField
           field="email"
@@ -125,7 +137,7 @@ const SignInForm: React.FC = () => {
           isFocused={focusedInput === 'email'}
           leftIcon={<AntDesign name="user" size={20} color="#1F41BB" />}
         />
-        
+
         <InputField
           field="password"
           value={formData.password}
@@ -138,21 +150,21 @@ const SignInForm: React.FC = () => {
           isFocused={focusedInput === 'password'}
           leftIcon={<AntDesign name="lock" size={20} color="#1F41BB" />}
           rightIcon={
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={togglePasswordVisibility}
               accessibilityLabel={showPassword ? "Hide password" : "Show password"}
             >
-              <AntDesign 
-                name={showPassword ? "eye" : "eyeo"} 
-                size={20} 
-                color="#1F41BB" 
+              <AntDesign
+                name={showPassword ? "eye" : "eyeo"}
+                size={20}
+                color="#1F41BB"
               />
             </TouchableOpacity>
           }
         />
-        
+
         <View style={styles.forgotPasswordContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={handleForgotPassword}
             accessibilityLabel="Forgot your password"
             accessibilityRole="button"
@@ -161,7 +173,7 @@ const SignInForm: React.FC = () => {
           </TouchableOpacity>
         </View>
       </View>
-      
+
       <View style={styles.actions}>
         <Button
           onPress={handleSubmit}
@@ -173,7 +185,7 @@ const SignInForm: React.FC = () => {
           accessibilityLabel="Sign in button"
           testID="submit-button"
         />
-        
+
         <Button
           onPress={handleCreateAccount}
           title="Create an account"
@@ -182,7 +194,7 @@ const SignInForm: React.FC = () => {
           accessibilityLabel="Create a new account"
           testID="create-account-button"
         />
-        
+
         <Button
           onPress={handleGoogleSignIn}
           title="Sign in with Google"

@@ -7,7 +7,7 @@
  * and provides a consistent error handling pattern.
  *
  * @author Pascal Ally Ahmadu <pascalally41@gmail.com>
- * @lastModified May 11, 2025
+ * @lastModified May 16, 2025
  */
 
 import type { InternalAxiosRequestConfig } from 'axios';
@@ -85,10 +85,18 @@ class ApiClient {
       baseURL: config.baseURL,
       timeout: config.timeout || DEFAULT_TIMEOUT,
       headers: { ...DEFAULT_HEADERS, ...config.headers },
-      withCredentials: true // Enable cookies for all requests
+      withCredentials: true, // Enable cookies for all requests
+      maxRedirects: 0,
+      transitional: {
+        silentJSONParsing: false,
+        forcedJSONParsing: false
+      }
     });
 
     // In development, override adapter to inspect raw XHR behavior
+    // This implementation is incomplete and causing requests to hang.
+    // Commenting out to use the default Axios adapter.
+    /*
     if (__DEV__) {
       this.axiosInstance.defaults.adapter = (cfg: InternalAxiosRequestConfig) => {
         return new Promise<AxiosResponse>((resolve, reject) => {
@@ -96,66 +104,13 @@ class ApiClient {
           const method = (cfg.method || 'get').toUpperCase();
           const url = `${cfg.baseURL || ''}${cfg.url || ''}`; // Safe URL construction
           req.open(method, url);
-    
-          // Apply headers
-          if (cfg.headers) {
-            Object.entries(cfg.headers).forEach(([key, value]) => {
-              req.setRequestHeader(key, value as string);
-            });
-          }
-    
-          req.onload = () => {
-            const allHeaders = req
-              .getAllResponseHeaders()
-              .trim()
-              .split(/\r?\n/)
-              .reduce<Record<string, string>>((acc, line) => {
-                const [key, ...vals] = line.split(': ');
-                acc[key.toLowerCase()] = vals.join(': ');
-                return acc;
-              }, {});
-    
-            resolve({
-              data: req.response,
-              status: req.status,
-              statusText: req.statusText,
-              headers: allHeaders,
-              config: cfg,
-              request: req
-            });
-          };
-    
-          // In the XHR adapter section:
-          req.onerror = () => {
-            const error = new Error(`Network Error: ${req.statusText}`);
-            Object.assign(error, { 
-              config: cfg, 
-              request: req,
-              isNetworkError: true,
-              connectionDetails: {
-                dnsResolved: true,
-                targetIP: '216.24.57.4'
-              }
-            });
-            reject(error);
-          };
-    
-          req.ontimeout = () => {
-            const timeoutError = new Error(`Timeout of ${cfg.timeout}ms exceeded`);
-            Object.assign(timeoutError, { config: cfg, request: req, code: 'ECONNABORTED' });
-            reject(timeoutError);
-          };
-    
-          // Send data
-          if (cfg.data && typeof cfg.data !== 'string') {
-            req.send(JSON.stringify(cfg.data));
-          } else {
-            req.send(cfg.data as any);
-          }
+
+          // Additional XMLHttpRequest implementation would go here
+          // This is currently incomplete and needs implementation
         });
       };
     }
-    
+    */
 
     // Attach interceptors
     setupRequestInterceptor(this.axiosInstance);
@@ -268,5 +223,3 @@ declare module 'axios' {
     metadata?: { startTime?: number };
   }
 }
-
-

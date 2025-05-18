@@ -62,17 +62,18 @@ export const useSignUp = () => {
     setIsSubmitting(true);
     
     try {
-      // Implementation of sign up logic would go here
+      // Add actual signup API call here
       console.log('Sign up with:', formData);
       
-      // Navigate to next screen or show success message
-      // navigation.navigate('Home');
+      // Add navigation after successful signup
+      navigation.navigate('Home');
     } catch (error) {
       console.error('Sign up error:', error);
+      // Add error state handling
     } finally {
       setIsSubmitting(false);
     }
-  }, [formData]);
+  }, [formData, navigation]);
 
   /**
    * Navigates to sign in screen

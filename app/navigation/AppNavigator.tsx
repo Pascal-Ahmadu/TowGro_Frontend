@@ -21,7 +21,10 @@ type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => (
-  <Stack.Navigator screenOptions={{ headerShown: false }}>
+  <Stack.Navigator 
+    initialRouteName="Splash"
+    screenOptions={{ headerShown: false }}
+  >
     <Stack.Screen name="Splash" component={SplashScreen} />
     <Stack.Screen name="Welcome" component={WelcomeScreen} />
     <Stack.Screen name="SignIn" component={SignInScreen} />

@@ -52,65 +52,25 @@ export async function getAuthToken(): Promise<string | null> {
  * @returns The extracted token or null if not found
  */
 export function extractTokenFromResponse(response: any): string | null {
-  // Check all possible token locations
-  const possibleTokens = {
-    accessToken: response.data?.accessToken,
-    token: response.data?.token,
-    xAuthToken: response.headers?.['x-auth-token'],
-    authorization: response.headers?.authorization,
-    bearerHeader: response.headers?.authorization?.startsWith('Bearer ') ? 
-      response.headers.authorization.substring(7) : null,
-    authToken: response.data?.authToken
-  };
-  
-  // Log token search results in development
-  if (__DEV__) {
-    console.log('Token extraction search results:', 
-      Object.fromEntries(
-        Object.entries(possibleTokens)
-          .map(([key, value]) => [key, value ? 'FOUND' : 'NOT FOUND'])
-      )
-    );
+  // Add debug logging
+  console.log('Token search locations:', {
+    data: response.data,
+    headers: response.headers
+  });
+
+  // Check response body first
+  const token = response.data?.accessToken || 
+               response.data?.token ||
+               response.headers?.['x-auth-token'] ||
+               response.headers?.authorization?.replace('Bearer ', '');
+
+  if (!token) {
+    console.warn('Token not found in:', {
+      dataKeys: Object.keys(response.data || {}),
+      headerKeys: Object.keys(response.headers || {})
+    });
   }
-  
-  // Check for token in response body first
-  const token = possibleTokens.accessToken || 
-                possibleTokens.token || 
-                possibleTokens.xAuthToken || 
-                possibleTokens.bearerHeader ||
-                possibleTokens.authToken;
-  
-  if (token) {
-    return token;
-  }
-  
-  // If no token found but we have a successful response, 
-  // check if it's using cookie-based authentication
-  if (response.status >= 200 && response.status < 300) {
-    // Check if there are any Set-Cookie headers
-    const hasCookies = Object.keys(response.headers || {}).some(h => 
-      h.toLowerCase() === 'set-cookie' || 
-      h.toLowerCase().includes('cookie'));
-    
-    if (hasCookies) {
-      // Use a placeholder token for cookie-based authentication
-      if (__DEV__) {
-        console.log('Using cookie-based authentication');
-      }
-      return 'cookie-based-auth';
-    }
-    
-    // For status 201 (Created) responses, we might assume success even without explicit tokens
-    // Some APIs implicitly establish a session on successful login
-    if (response.status === 201) {
-      if (__DEV__) {
-        console.log('Successful login with status 201, assuming implicit session');
-      }
-      return 'implicit-session-auth';
-    }
-  }
-  
-  return null;
+  return token;
 }
 
 /**
@@ -167,12 +127,25 @@ export async function refreshAccessToken(baseURL: string): Promise<string | null
  * Store authentication tokens securely
  * @param data - Token response data
  */
-export async function storeAuthTokens(data: TokenResponse): Promise<void> {
-  const tokenExpiration = Date.now() + (data.expiresIn * 1000);
+export async function storeAuthTokens(tokens: {
+  accessToken: string,
+  refreshToken: string,
+  expiresIn: number
+}): Promise<void> {
+  // Add session validation
+  if (tokens.accessToken === 'implicit-session-auth') {
+    console.log('Session-based authentication established');
+    await SecureStore.setItemAsync(
+      STORAGE_KEYS.SESSION_COOKIE, 
+      'session-established'
+    );
+    return;
+  }
+  const tokenExpiration = Date.now() + (tokens.expiresIn * 1000);
   
   await Promise.all([
-    SecureStore.setItemAsync(STORAGE_KEYS.AUTH_TOKEN, data.accessToken),
-    SecureStore.setItemAsync(STORAGE_KEYS.REFRESH_TOKEN, data.refreshToken),
+    SecureStore.setItemAsync(STORAGE_KEYS.AUTH_TOKEN, tokens.accessToken),
+    SecureStore.setItemAsync(STORAGE_KEYS.REFRESH_TOKEN, tokens.refreshToken),
     SecureStore.setItemAsync(STORAGE_KEYS.TOKEN_EXPIRATION, tokenExpiration.toString())
   ]);
 }
